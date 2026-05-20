@@ -2,7 +2,7 @@ from typing import Optional
 
 
 
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QApplication, QWidget
 
 from PyQt6.QtCore import Qt, QRect, QPoint, pyqtSignal
 
@@ -63,6 +63,7 @@ class RegionOverlay(QWidget):
         self._cur:   Optional[QPoint] = None
 
         self._bg:    Optional[QPixmap] = None
+        self._active = False
 
         self._setup()
 
@@ -82,11 +83,15 @@ class RegionOverlay(QWidget):
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.CrossCursor)
 
 
 
     def start(self):
+        if self._active:
+            return
 
         with mss.mss() as sct:
 
@@ -105,12 +110,16 @@ class RegionOverlay(QWidget):
         self._start = None
 
         self._cur = None
+        self._active = True
 
         self.show()
 
-        self.activateWindow()
-
         self.raise_()
+        self.activateWindow()
+        self.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
+        self.grabMouse(Qt.CursorShape.CrossCursor)
+        self.grabKeyboard()
+        QApplication.processEvents()
 
 
 
@@ -277,6 +286,7 @@ class RegionOverlay(QWidget):
             self._start = event.pos()
 
             self._cur = event.pos()
+            self.update()
 
 
 
@@ -286,7 +296,7 @@ class RegionOverlay(QWidget):
 
             sel = QRect(self._start, event.pos()).normalized()
 
-            self.hide()
+            self._finish()
 
             if sel.width() > 4 and sel.height() > 4:
 
@@ -302,12 +312,43 @@ class RegionOverlay(QWidget):
 
                 self.cancelled.emit()
 
+        elif event.button() == Qt.MouseButton.RightButton:
+
+            self._cancel()
+
 
 
     def keyPressEvent(self, event):
 
         if event.key() == Qt.Key.Key_Escape:
 
-            self.hide()
+            self._cancel()
+        else:
+            super().keyPressEvent(event)
 
-            self.cancelled.emit()
+    def closeEvent(self, event):
+        self._finish()
+        super().closeEvent(event)
+
+    def _cancel(self):
+        self._finish()
+        self.cancelled.emit()
+
+    def _finish(self):
+        if not self._active:
+            self.hide()
+            return
+
+        try:
+            self.releaseMouse()
+        except Exception:
+            pass
+        try:
+            self.releaseKeyboard()
+        except Exception:
+            pass
+
+        self._active = False
+        self._start = None
+        self._cur = None
+        self.hide()

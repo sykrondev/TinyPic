@@ -193,6 +193,7 @@ class TinyPicApp:
         self._region_overlay: Optional[RegionOverlay] = None
 
         self._preview: Optional[PreviewWindow] = None
+        self._region_pending = False
 
         self._sig = _Sig()
 
@@ -296,7 +297,7 @@ class TinyPicApp:
 
         self._region_overlay.region_selected.connect(self._on_region)
 
-        self._region_overlay.cancelled.connect(lambda: None)
+        self._region_overlay.cancelled.connect(self._on_region_cancelled)
 
 
 
@@ -340,11 +341,18 @@ class TinyPicApp:
 
 
 
-            if self._region_overlay.isVisible():
+            if self._region_pending or self._region_overlay.isVisible():
 
                 return
 
-            QTimer.singleShot(120, self._region_overlay.start)
+            self._region_pending = True
+
+            def _start_region():
+                self._region_pending = False
+                if not self._region_overlay.isVisible():
+                    self._region_overlay.start()
+
+            QTimer.singleShot(120, _start_region)
 
             return
 
@@ -379,6 +387,7 @@ class TinyPicApp:
 
 
     def _on_region(self, x: int, y: int, w: int, h: int):
+        self._region_pending = False
 
         delay = self._config.delay_seconds
 
@@ -405,6 +414,9 @@ class TinyPicApp:
 
 
         threading.Thread(target=_do, daemon=True).start()
+
+    def _on_region_cancelled(self):
+        self._region_pending = False
 
 
 
