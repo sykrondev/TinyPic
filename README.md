@@ -2,7 +2,8 @@
 
 TinyPic is the lightest portable screenshot companion for Windows: fast region captures, instant clipboard flow, and a playful pinkcore interface that stays out of your way.
 
-![TinyPic settings](assets/tinypic-settings.png)
+![TinyPic settings](assets/tinypic-settings.png) <img width="538" height="559" alt="screenshot_2026-05-20_04-04-12" src="https://github.com/user-attachments/assets/2801e1d8-b4c9-4b70-82f6-062df75c6524" />
+
 
 TinyPic is a small Windows screenshot tool with a pinkcore frameless interface, animated falling stars, region capture, preview, clipboard support, hotkeys, and optional Windows startup.
 
