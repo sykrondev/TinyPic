@@ -1,6 +1,7 @@
 import time
 
 import threading
+import traceback
 
 from pathlib import Path
 
@@ -33,6 +34,19 @@ from preview_window import PreviewWindow
 from settings_window import SettingsWindow
 
 from styles import MAIN_STYLE
+
+
+def _log_error(title: str, exc: BaseException):
+    try:
+        path = Path.home()
+        import os
+        path = Path(os.environ.get("APPDATA", path)) / "TinyPic" / "crash.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"\n[{title}]\n")
+            traceback.print_exception(type(exc), exc, exc.__traceback__, file=f)
+    except Exception:
+        pass
 
 
 
@@ -193,6 +207,7 @@ class TinyPicApp:
         self._region_overlay: Optional[RegionOverlay] = None
 
         self._preview: Optional[PreviewWindow] = None
+        self._settings: Optional[SettingsWindow] = None
         self._region_pending = False
 
         self._sig = _Sig()
@@ -391,29 +406,19 @@ class TinyPicApp:
 
         delay = self._config.delay_seconds
 
-
-
-        def _do():
-
-            if delay:
-
-                time.sleep(delay)
-
+        def _do_capture():
             try:
-
                 img = capture_region(x, y, w, h)
-
                 if img:
-
-                    self._sig.capture_done.emit(img)
-
+                    self._show_preview(img)
             except Exception as e:
+                _log_error("region capture", e)
+                self._tray.showMessage(
+                    "TinyPic", f"capture error: {e}",
+                    QSystemTrayIcon.MessageIcon.Critical, 3000
+                )
 
-                print(f"[capture] region {e}")
-
-
-
-        threading.Thread(target=_do, daemon=True).start()
+        QTimer.singleShot(max(1, int(delay * 1000)), _do_capture)
 
     def _on_region_cancelled(self):
         self._region_pending = False
@@ -421,6 +426,16 @@ class TinyPicApp:
 
 
     def _show_preview(self, image: Image.Image):
+        try:
+            self._show_preview_inner(image)
+        except Exception as e:
+            _log_error("show preview", e)
+            self._tray.showMessage(
+                "TinyPic", f"preview error: {e}",
+                QSystemTrayIcon.MessageIcon.Critical, 3000
+            )
+
+    def _show_preview_inner(self, image: Image.Image):
 
         if self._config.show_preview:
 
@@ -498,11 +513,14 @@ class TinyPicApp:
 
     def _open_settings(self):
 
-        dlg = SettingsWindow(self._config)
+        if not self._settings:
+            self._settings = SettingsWindow(self._config)
 
-        dlg.settings_saved.connect(self._on_settings_saved)
-
-        dlg.exec()
+            self._settings.settings_saved.connect(self._on_settings_saved)
+            self._settings.destroyed.connect(lambda: setattr(self, "_settings", None))
+        self._settings.show()
+        self._settings.raise_()
+        self._settings.activateWindow()
 
 
 

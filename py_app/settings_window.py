@@ -244,7 +244,7 @@ class SettingsWindow(FramelessWindow):
 
         self.setMinimumHeight(560)
 
-        self.setModal(True)
+        self.setModal(False)
 
         self._build()
 

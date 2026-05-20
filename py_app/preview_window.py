@@ -92,13 +92,7 @@ class PreviewWindow(FramelessWindow):
 
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
 
-        scroll.setStyleSheet(
-
-
-
-
-
-        )
+        scroll.setStyleSheet("background: transparent;")
 
 
 
@@ -139,9 +133,7 @@ class PreviewWindow(FramelessWindow):
         self._lbl_status = QLabel("")
 
         self._lbl_status.setStyleSheet(
-
-
-
+            "color:#10B981; font-weight:700; font-size:12px; background:transparent;"
         )
 
 

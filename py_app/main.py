@@ -1,6 +1,9 @@
 import sys
 
 import os
+import faulthandler
+import traceback
+from pathlib import Path
 
 
 
@@ -23,6 +26,31 @@ from PyQt6.QtGui import QPalette, QColor
 
 
 from styles import MAIN_STYLE
+
+
+_CRASH_LOG_FILE = None
+
+
+def _crash_log_path() -> Path:
+    appdata = Path(os.environ.get("APPDATA", Path.home())).expanduser()
+    path = appdata / "TinyPic" / "crash.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _install_crash_logging():
+    global _CRASH_LOG_FILE
+    log = open(_crash_log_path(), "a", encoding="utf-8")
+    _CRASH_LOG_FILE = log
+    faulthandler.enable(log)
+
+    def _excepthook(exc_type, exc, tb):
+        log.write("\n[unhandled exception]\n")
+        traceback.print_exception(exc_type, exc, tb, file=log)
+        log.flush()
+        sys.__excepthook__(exc_type, exc, tb)
+
+    sys.excepthook = _excepthook
 
 
 
@@ -95,6 +123,7 @@ def _apply_light_theme(app: QApplication):
 
 
 def main():
+    _install_crash_logging()
 
     QApplication.setHighDpiScaleFactorRoundingPolicy(
 

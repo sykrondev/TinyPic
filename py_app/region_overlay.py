@@ -51,6 +51,9 @@ class RegionOverlay(QWidget):
     _YELLOW = QColor("#FFD6F1")
 
     _DIM    = QColor(35, 0, 45, 145)
+    _ZOOM_SCALE = 3
+    _ZOOM_W = 170
+    _ZOOM_H = 120
 
 
 
@@ -117,8 +120,6 @@ class RegionOverlay(QWidget):
         self.raise_()
         self.activateWindow()
         self.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
-        self.grabMouse(Qt.CursorShape.CrossCursor)
-        self.grabKeyboard()
         QApplication.processEvents()
 
 
@@ -220,6 +221,7 @@ class RegionOverlay(QWidget):
             painter.setPen(QColor("#FFFFFF"))
 
             painter.drawText(lx + 9, ly + lh - 7, label)
+            self._draw_zoom_lens(painter, self._cur)
 
             return
 
@@ -268,6 +270,48 @@ class RegionOverlay(QWidget):
         painter.setPen(QColor("#7C2D92"))
 
         painter.drawText(hx + 14, hy + hh - 8, hint)
+        self._draw_zoom_lens(painter, pos)
+
+    def _draw_zoom_lens(self, painter: QPainter, pos: QPoint):
+        if not self._bg or not pos:
+            return
+
+        zoom_w, zoom_h = self._ZOOM_W, self._ZOOM_H
+        margin = 18
+        x = pos.x() + 24
+        y = pos.y() + 24
+        if x + zoom_w + margin > self.width():
+            x = pos.x() - zoom_w - 24
+        if y + zoom_h + margin > self.height():
+            y = pos.y() - zoom_h - 24
+        x = max(margin, min(x, self.width() - zoom_w - margin))
+        y = max(margin, min(y, self.height() - zoom_h - margin))
+
+        src_w = max(1, zoom_w // self._ZOOM_SCALE)
+        src_h = max(1, zoom_h // self._ZOOM_SCALE)
+        sx = max(0, min(pos.x() - src_w // 2, self.width() - src_w))
+        sy = max(0, min(pos.y() - src_h // 2, self.height() - src_h))
+
+        target = QRect(x, y, zoom_w, zoom_h)
+        source = QRect(sx, sy, src_w, src_h)
+
+        painter.setBrush(QBrush(QColor("#FFF4FC")))
+        painter.setPen(QPen(self._CYAN, 2))
+        painter.drawRect(target.adjusted(-1, -1, 1, 1))
+        painter.drawPixmap(target, self._bg, source)
+
+        cx = x + zoom_w // 2
+        cy = y + zoom_h // 2
+        painter.setPen(QPen(QColor("#B5179E"), 1))
+        painter.drawLine(cx, y + 8, cx, y + zoom_h - 8)
+        painter.drawLine(x + 8, cy, x + zoom_w - 8, cy)
+
+        painter.setBrush(QBrush(self._BLUE))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRect(x, y - 22, 54, 20)
+        painter.setPen(QColor("#FFFFFF"))
+        painter.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        painter.drawText(x + 8, y - 7, f"{self._ZOOM_SCALE}x")
 
 
 
@@ -338,15 +382,6 @@ class RegionOverlay(QWidget):
         if not self._active:
             self.hide()
             return
-
-        try:
-            self.releaseMouse()
-        except Exception:
-            pass
-        try:
-            self.releaseKeyboard()
-        except Exception:
-            pass
 
         self._active = False
         self._start = None
