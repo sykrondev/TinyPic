@@ -7,3 +7,8 @@ __pycache__/
 .env
 .env.*
 README.original.md
+.cursor/
+.cursorignore
+.cursorindexingignore
+RELEASE_v5.0.0.md
+commit_msg_clean.txt
