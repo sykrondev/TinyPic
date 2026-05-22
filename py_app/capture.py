@@ -4,6 +4,8 @@ from typing import Optional, Tuple
 
 from PIL import Image
 
+from PyQt6.QtGui import QPixmap, QImage
+
 import mss
 
 import mss.tools
@@ -48,6 +50,17 @@ def capture_all_monitors() -> Image.Image:
 
 
 
+
+
+def qpixmap_to_pil(pix: QPixmap) -> Optional[Image.Image]:
+    if pix.isNull() or pix.width() <= 0 or pix.height() <= 0:
+        return None
+    qimg = pix.toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+    w, h = qimg.width(), qimg.height()
+    stride = qimg.bytesPerLine()
+    buf = qimg.bits()
+    buf.setsize(stride * h)
+    return Image.frombytes("RGBA", (w, h), bytes(buf), "raw", "RGBA").convert("RGB")
 
 
 def capture_region(x: int, y: int, width: int, height: int) -> Optional[Image.Image]:

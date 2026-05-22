@@ -1,32 +1,19 @@
 import sys
-
 import os
 import faulthandler
 import traceback
 from pathlib import Path
 
-
-
 if getattr(sys, "frozen", False):
-
     sys.path.insert(0, os.path.dirname(sys.executable))
-
 else:
-
     sys.path.insert(0, os.path.dirname(__file__))
 
-
-
 from PyQt6.QtWidgets import QApplication, QMessageBox
-
 from PyQt6.QtCore import Qt
 
-from PyQt6.QtGui import QPalette, QColor
-
-
-
-from styles import MAIN_STYLE
-
+from config import Config
+from theme_apply import load_fonts, apply_theme
 
 _CRASH_LOG_FILE = None
 
@@ -53,136 +40,55 @@ def _install_crash_logging():
     sys.excepthook = _excepthook
 
 
-
-
-
-def _apply_light_theme(app: QApplication):
-
-
-
-    app.setStyle("Fusion")
-
-    app.setStyleSheet(MAIN_STYLE)
-
-
-
-    C   = QColor
-
-    pal = QPalette()
-
-    pal.setColor(QPalette.ColorRole.Window,          C("#FFF4FC"))
-
-    pal.setColor(QPalette.ColorRole.WindowText,      C("#3B124A"))
-
-    pal.setColor(QPalette.ColorRole.Base,            C("#FFFFFF"))
-
-    pal.setColor(QPalette.ColorRole.AlternateBase,   C("#FFE6F7"))
-
-    pal.setColor(QPalette.ColorRole.ToolTipBase,     C("#FFF4FC"))
-
-    pal.setColor(QPalette.ColorRole.ToolTipText,     C("#3B124A"))
-
-    pal.setColor(QPalette.ColorRole.Text,            C("#3B124A"))
-
-    pal.setColor(QPalette.ColorRole.Button,          C("#FF8FD6"))
-
-    pal.setColor(QPalette.ColorRole.ButtonText,      C("#3B124A"))
-
-    pal.setColor(QPalette.ColorRole.BrightText,      C("#FFFFFF"))
-
-    pal.setColor(QPalette.ColorRole.Highlight,       C("#D86DFF"))
-
-    pal.setColor(QPalette.ColorRole.HighlightedText, C("#FFFFFF"))
-
-    pal.setColor(QPalette.ColorRole.Link,            C("#B5179E"))
-
-    pal.setColor(QPalette.ColorRole.PlaceholderText, C("#A873B7"))
-
-
-
-
-
-    pal.setColor(QPalette.ColorGroup.Disabled,
-
-                 QPalette.ColorRole.WindowText, C("#808080"))
-
-    pal.setColor(QPalette.ColorGroup.Disabled,
-
-                 QPalette.ColorRole.Text,       C("#808080"))
-
-    pal.setColor(QPalette.ColorGroup.Disabled,
-
-                 QPalette.ColorRole.ButtonText, C("#808080"))
-
-
-
-    app.setPalette(pal)
-
-
-
-
-
-def main():
-    _install_crash_logging()
-
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
-
-    )
-
-
-
-    app = QApplication(sys.argv)
-
-    app.setApplicationName("TinyPic")
-
-    app.setApplicationVersion("1.0.0")
-
-    app.setQuitOnLastWindowClosed(False)
-
-
-
-
-
+def _mlog(msg: str):
     try:
-
-        import ctypes
-
-        ctypes.windll.kernel32.CreateMutexW(None, False, "TinyPicMutex_v1")
-
-        if ctypes.windll.kernel32.GetLastError() == 183:
-
-            QMessageBox.information(
-
-                None, "TinyPic",
-
-
-
-            )
-
-            sys.exit(0)
-
+        import os, datetime
+        from pathlib import Path
+        path = Path(os.environ.get("APPDATA", Path.home())) / "TinyPic" / "startup.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.datetime.now().strftime('%H:%M:%S.%f')}] {msg}\n")
     except Exception:
-
         pass
 
 
+def main():
+    _mlog("main() start")
+    _install_crash_logging()
 
-    _apply_light_theme(app)
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
 
+    _mlog("QApplication creating")
+    app = QApplication(sys.argv)
+    app.setApplicationName("TinyPic")
+    app.setApplicationVersion("1.0.0")
+    app.setQuitOnLastWindowClosed(False)
+    _mlog("QApplication created")
 
+    try:
+        import ctypes
+        ctypes.windll.kernel32.CreateMutexW(None, False, "TinyPicMutex_v1")
+        if ctypes.windll.kernel32.GetLastError() == 183:
+            _mlog("mutex: already running, exiting")
+            QMessageBox.information(None, "TinyPic", "TinyPic is already running.")
+            sys.exit(0)
+        _mlog("mutex: acquired OK")
+    except Exception as e:
+        _mlog(f"mutex: exception {e}")
+
+    load_fonts()
+    config = Config.load()
+    apply_theme(app, config.theme_id or "pinkcore", config.ui_effects)
+    _mlog("theme applied")
 
     from app import TinyPicApp
-
+    _mlog("creating TinyPicApp")
     _instance = TinyPicApp(app)
-
+    _mlog("TinyPicApp created, entering event loop")
     sys.exit(app.exec())
 
 
-
-
-
 if __name__ == "__main__":
-
     main()

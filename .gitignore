@@ -1,0 +1,9 @@
+build/
+dist/
+__pycache__/
+*.py[cod]
+.claude/
+*.log
+.env
+.env.*
+README.original.md

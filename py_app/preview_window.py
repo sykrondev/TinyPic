@@ -1,419 +1,279 @@
+import random
 from pathlib import Path
-
 from datetime import datetime
 
-
-
 from PyQt6.QtWidgets import (
-
-    QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFileDialog, QScrollArea,
-
+    QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFileDialog, QScrollArea, QWidget,
 )
-
-from PyQt6.QtCore import Qt, QSize, QTimer
-
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QImage, QKeySequence, QShortcut
 
+from PIL import Image, ImageEnhance
 
-
-from PIL import Image
-
-
-
-from styles import PREVIEW_STYLE
-
+from styles import build_stylesheet
+import theme
+import ui_effects
 from config import Config
-
-from frameless import FramelessWindow, soft_shadow
-
-
-
+from frameless import FramelessWindow
+from widgets.glow_button import GlowButton
 
 
 def _pil_to_qpixmap(img: Image.Image) -> QPixmap:
-
     img_rgba = img.convert("RGBA")
-
     data = img_rgba.tobytes()
-
     qimg = QImage(data, img_rgba.width, img_rgba.height,
-
                   img_rgba.width * 4, QImage.Format.Format_RGBA8888)
-
     return QPixmap.fromImage(qimg)
 
 
-
+def _apply_vhs(img: Image.Image) -> Image.Image:
+    fx = ui_effects.active()
+    t = theme.active
+    if not fx.vhs_on_preview or t.surface_mode != "aether":
+        return img.convert("RGB")
+    img = img.convert("RGB")
+    if t.surface_mode == "aether":
+        img = ImageEnhance.Color(img).enhance(0.75)
+        img = ImageEnhance.Contrast(img).enhance(1.05)
+        overlay = Image.new("RGB", img.size, (40, 40, 40))
+        img = Image.blend(img, overlay, 0.12)
+    else:
+        img = ImageEnhance.Color(img).enhance(0.82)
+        img = ImageEnhance.Contrast(img).enhance(0.9)
+        overlay = Image.new("RGB", img.size, (255, 77, 203))
+        img = Image.blend(img, overlay, 0.07)
+    px = img.load()
+    w, h = img.size
+    rng = random.Random(99)
+    step = max(1, min(w, h) // 180)
+    for y in range(0, h, step):
+        for x in range(0, w, step):
+            if rng.random() < 0.12:
+                r, g, b = px[x, y]
+                n = rng.randint(-20, 20)
+                px[x, y] = (
+                    max(0, min(255, r + n)),
+                    max(0, min(255, g + n)),
+                    max(0, min(255, b + n)),
+                )
+    return img
 
 
 class PreviewWindow(FramelessWindow):
-
     def __init__(self, image: Image.Image, config: Config, parent=None):
-
-        super().__init__("preview", "", parent)
-
-        self._image  = image
-
+        w, h = image.size
+        super().__init__(
+            "Preview",
+            f"{w} × {h}  ·  {config.image_format}",
+            parent,
+            glitch_title=(config.theme_id == "webcore"),
+            geometry_slot="preview",
+            config=config,
+        )
+        self._image = image
         self._config = config
-
-        self.setStyleSheet(PREVIEW_STYLE)
-
+        self._source_px: QPixmap | None = None
+        self.setStyleSheet(build_stylesheet(theme.active))
+        self.setMinimumSize(400, 300)
         self._build()
-
         self._setup_shortcuts()
-
-
-
+        self._apply_initial_geometry()
+        self._refresh_display()
         if config.copy_to_clipboard:
-
             QTimer.singleShot(80, self._auto_copy)
 
-
-
-
-
-
-
     def _build(self):
-
         root = self.content_layout()
+        root.setSpacing(6)
+        root.setContentsMargins(8, 4, 8, 6)
 
-        root.setSpacing(12)
+        self._scroll = QScrollArea()
+        self._scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
 
+        self._canvas = QWidget()
+        self._canvas.setObjectName("preview_canvas")
+        canvas_lay = QVBoxLayout(self._canvas)
+        canvas_lay.setContentsMargins(8, 8, 8, 8)
+        canvas_lay.setSpacing(0)
 
+        self._lbl_image = QLabel()
+        self._lbl_image.setObjectName("lbl_preview_image")
+        self._lbl_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        canvas_lay.addWidget(self._lbl_image, 0, Qt.AlignmentFlag.AlignCenter)
 
+        self._scroll.setWidget(self._canvas)
+        root.addWidget(self._scroll, 1)
 
+        bar = QHBoxLayout()
+        bar.setSpacing(6)
+        bar.setContentsMargins(0, 4, 0, 0)
 
-        scroll = QScrollArea()
-
-        scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        scroll.setWidgetResizable(False)
-
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-
-        scroll.setStyleSheet("background: transparent;")
-
-
-
-        self._img_lbl = QLabel()
-
-        self._img_lbl.setObjectName("lbl_image")
-
-        self._img_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self._img_lbl.setContentsMargins(12, 12, 12, 12)
-
-        self._refresh_display()
-
-        scroll.setWidget(self._img_lbl)
-
-        root.addWidget(scroll, 1)
-
-
-
-
-
-        info_row = QHBoxLayout()
-
-        info_row.setContentsMargins(2, 0, 2, 0)
-
-        info_row.setSpacing(8)
-
-
-
-        w, h = self._image.size
-
-        self._lbl_info = QLabel(f"{w} x {h}  |  {self._config.image_format}")
-
-        self._lbl_info.setObjectName("lbl_info")
-
-
-
-        self._lbl_status = QLabel("")
-
-        self._lbl_status.setStyleSheet(
-            "color:#10B981; font-weight:700; font-size:12px; background:transparent;"
-        )
-
-
-
-        info_row.addWidget(self._lbl_info)
-
-        info_row.addStretch()
-
-        info_row.addWidget(self._lbl_status)
-
-        root.addLayout(info_row)
-
-
-
-
-
-        btn_row = QHBoxLayout()
-
-        btn_row.setSpacing(8)
-
-
-
-        self._btn_copy = QPushButton("Copy")
-
+        self._btn_copy = GlowButton("Copy")
         self._btn_copy.setObjectName("btn_sky")
-
         self._btn_copy.setToolTip("Copy to clipboard | Ctrl+C")
-
         self._btn_copy.clicked.connect(self._copy)
-
-        soft_shadow(self._btn_copy, "#FF8FD6", blur=18, alpha=95, y=2)
-
-
-
-        self._btn_save = QPushButton("Save")
-
+        self._btn_save = GlowButton("Save")
         self._btn_save.setToolTip("Save to default folder | Ctrl+S")
-
         self._btn_save.clicked.connect(self._save_default)
-
-        soft_shadow(self._btn_save, "#FF8FD6", blur=18, alpha=95, y=2)
-
-
-
         self._btn_save_as = QPushButton("Save as...")
-
         self._btn_save_as.setObjectName("btn_secondary")
-
         self._btn_save_as.clicked.connect(self._save_as)
-
-
-
         self._btn_discard = QPushButton("Discard")
-
         self._btn_discard.setObjectName("btn_discard")
-
         self._btn_discard.clicked.connect(self.reject)
 
+        bar.addWidget(self._btn_copy)
+        bar.addWidget(self._btn_save)
+        bar.addWidget(self._btn_save_as)
+        bar.addStretch()
+        bar.addWidget(self._btn_discard)
 
+        self._lbl_status = QLabel("")
+        self._lbl_status.setStyleSheet(self._status_style(theme.active.cyan_hud))
+        bar.addWidget(self._lbl_status)
 
-        btn_row.addWidget(self._btn_copy)
+        bar_wrap = QWidget()
+        bar_wrap.setFixedHeight(44)
+        bar_wrap.setLayout(bar)
+        root.addWidget(bar_wrap)
 
-        btn_row.addWidget(self._btn_save)
-
-        btn_row.addWidget(self._btn_save_as)
-
-        btn_row.addStretch()
-
-        btn_row.addWidget(self._btn_discard)
-
-
-
-        root.addLayout(btn_row)
-
-
-
-
-
+    def _apply_initial_geometry(self):
+        c = self._config
+        if c.preview_width > 0 and c.preview_height > 0:
+            self.restore_geometry()
+            return
         screen = self.screen()
-
-        if screen:
-
-            avail = screen.availableGeometry()
-
-            w2, h2 = self._image.size
-
-            win_w  = min(w2 + 100, avail.width()  - 100)
-
-            win_h  = min(h2 + 200, avail.height() - 80)
-
-            self.resize(max(580, win_w), max(480, win_h))
-
-            self.move(
-
-                avail.x() + (avail.width()  - self.width())  // 2,
-
-                avail.y() + (avail.height() - self.height()) // 2,
-
-            )
-
-
+        if not screen:
+            self.resize(720, 560)
+            return
+        avail = screen.availableGeometry()
+        iw, ih = self._image.size
+        win_w = min(iw + 80, avail.width() - 80)
+        win_h = min(ih + 140, avail.height() - 60)
+        self.resize(max(520, win_w), max(420, win_h))
+        self.move(
+            avail.x() + (avail.width() - self.width()) // 2,
+            avail.y() + (avail.height() - self.height()) // 2,
+        )
 
     def _setup_shortcuts(self):
-
         QShortcut(QKeySequence("Ctrl+C"), self, activated=self._copy)
-
         QShortcut(QKeySequence("Ctrl+S"), self, activated=self._save_default)
-
         QShortcut(QKeySequence("Escape"), self, activated=self.reject)
 
-
-
     def _refresh_display(self):
+        display_img = _apply_vhs(self._image.copy())
+        self._source_px = _pil_to_qpixmap(display_img)
+        self._scale_to_viewport()
 
-        px = _pil_to_qpixmap(self._image)
+    def _scale_to_viewport(self):
+        if self._source_px is None or self._source_px.isNull():
+            return
+        vp = self._scroll.viewport().size()
+        if vp.width() < 4 or vp.height() < 4:
+            return
+        scaled = self._source_px.scaled(
+            vp,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self._lbl_image.setPixmap(scaled)
+        self._lbl_image.setFixedSize(scaled.size())
 
-        screen = self.screen()
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._scale_to_viewport)
 
-        if screen:
-
-            avail = screen.availableGeometry()
-
-            max_sz = QSize(avail.width() - 180, avail.height() - 260)
-
-            if px.width() > max_sz.width() or px.height() > max_sz.height():
-
-                px = px.scaled(
-
-                    max_sz,
-
-                    Qt.AspectRatioMode.KeepAspectRatio,
-
-                    Qt.TransformationMode.SmoothTransformation,
-
-                )
-
-        self._img_lbl.setPixmap(px)
-
-        self._img_lbl.adjustSize()
-
-
-
-
-
-
-
-    def _set_status(self, msg: str, color: str = "#10B981"):
-
-        self._lbl_status.setStyleSheet(
-
-            f"color:{color}; font-weight:700; font-size:12px; background:transparent;"
-
+    @staticmethod
+    def _status_style(color: str) -> str:
+        return (
+            f"color:{color}; font-family:'Space Mono',monospace; "
+            "font-size:11px; background:transparent;"
         )
 
-        self._lbl_status.setText(msg)
+    def refresh_theme(self):
+        t = theme.active
+        w, h = self._image.size
+        self.set_title("Preview", f"{w} × {h}  ·  {self._config.image_format}")
+        self.setStyleSheet(build_stylesheet(t))
+        self._title_bar.refresh_theme()
+        self._surface.refresh_theme()
+        for child in self._content.findChildren(GlowButton):
+            child.refresh_theme()
+        self._lbl_status.setStyleSheet(self._status_style(t.cyan_hud))
+        self._refresh_display()
+        for child in self._content.findChildren(QWidget):
+            child.style().unpolish(child)
+            child.style().polish(child)
 
+    def _set_status(self, msg: str, color: str | None = None):
+        color = color or theme.active.cyan_hud
+        self._lbl_status.setStyleSheet(self._status_style(color))
+        self._lbl_status.setText(msg)
         QTimer.singleShot(2800, lambda: self._lbl_status.setText(""))
 
-
-
     def _copy(self):
-
         try:
-
             from capture import image_to_clipboard
-
             image_to_clipboard(self._image)
-
             self._set_status("copied!")
-
         except Exception as e:
-
-            self._set_status(f"✗ {e}", "#DC2626")
-
-
+            self._set_status(f"✗ {e}", theme.active.glitch_magenta)
 
     def _auto_copy(self):
-
         try:
-
             from capture import image_to_clipboard
-
             image_to_clipboard(self._image)
-
             self._set_status("auto-copied")
-
         except Exception:
-
             pass
 
-
-
     def _build_filename(self) -> str:
-
-        now  = datetime.now()
-
+        now = datetime.now()
         name = self._config.filename_template
-
         name = name.replace("{datetime}", now.strftime("%Y-%m-%d_%H-%M-%S"))
-
-        name = name.replace("{date}",     now.strftime("%Y-%m-%d"))
-
-        name = name.replace("{time}",     now.strftime("%H-%M-%S"))
-
-        ext  = "jpg" if self._config.image_format == "JPEG" else self._config.image_format.lower()
-
+        name = name.replace("{date}", now.strftime("%Y-%m-%d"))
+        name = name.replace("{time}", now.strftime("%H-%M-%S"))
+        ext = "jpg" if self._config.image_format == "JPEG" else self._config.image_format.lower()
         return f"{name}.{ext}"
 
-
-
     def _save_default(self):
-
         try:
-
             self._config.ensure_save_path()
-
             base = Path(self._config.save_path) / self._build_filename()
-
             n = 1
-
             while base.exists():
-
                 base = base.parent / f"{base.stem}_{n}{base.suffix}"
-
                 n += 1
-
             from capture import save_image
-
             save_image(self._image, str(base), self._config.image_format)
-
             self._set_status(f"saved {base.name}")
-
         except Exception as e:
-
-            self._set_status(f"✗ {e}", "#DC2626")
-
-
+            self._set_status(f"✗ {e}", theme.active.glitch_magenta)
 
     def _save_as(self):
-
-        fmt     = self._config.image_format
-
+        fmt = self._config.image_format
         filters = {
-
-            "PNG":  "PNG (*.png)",
-
+            "PNG": "PNG (*.png)",
             "JPEG": "JPEG (*.jpg *.jpeg)",
-
-            "BMP":  "BMP (*.bmp)",
-
+            "BMP": "BMP (*.bmp)",
             "TIFF": "TIFF (*.tiff *.tif)",
-
         }
-
         filt = ";;".join(filters.values())
-
         path, _ = QFileDialog.getSaveFileName(
-
             self, "Save screenshot",
-
             str(Path(self._config.save_path) / self._build_filename()),
-
             filt, filters.get(fmt, filters["PNG"]),
-
         )
-
         if path:
-
             try:
-
                 ext = Path(path).suffix.lstrip(".").upper()
-
                 ext = "JPEG" if ext in ("JPG", "JPEG") else (ext if ext in ("PNG", "BMP", "TIFF") else fmt)
-
                 from capture import save_image
-
                 save_image(self._image, path, ext)
-
                 self._set_status(f"saved {Path(path).name}")
-
             except Exception as e:
-
-                self._set_status(f"✗ {e}", "#DC2626")
+                self._set_status(f"✗ {e}", theme.active.glitch_magenta)

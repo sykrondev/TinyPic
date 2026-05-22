@@ -1,30 +1,26 @@
 from pathlib import Path
-
-from typing import Optional
-
-
+from typing import Callable, Optional
 
 from PyQt6.QtWidgets import (
-
     QVBoxLayout, QHBoxLayout, QGridLayout,
-
     QLabel, QPushButton, QLineEdit, QCheckBox, QComboBox,
-
-    QGroupBox, QFileDialog, QWidget, QScrollArea,
-
+    QGroupBox, QFileDialog, QWidget, QScrollArea, QApplication,
+    QFrame,
 )
-
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-
 from PyQt6.QtGui import QKeyEvent
-
-
 
 from config import Config, is_startup_enabled, set_startup_enabled
 
-from styles import MAIN_STYLE
+from theme import THEMES
+from theme_apply import apply_theme
+from styles import build_stylesheet
+import theme
+import ui_effects
 
-from frameless import FramelessWindow, soft_shadow
+from frameless import FramelessWindow
+from widgets.marquee_label import MarqueeLabel
+from widgets.glow_button import GlowButton
 
 
 
@@ -230,25 +226,53 @@ class SettingsWindow(FramelessWindow):
 
 
 
-    def __init__(self, config: Config, parent=None):
+    def __init__(
+        self,
+        config: Config,
+        parent=None,
+        on_theme_changed: Optional[Callable[..., None]] = None,
+    ):
 
-        super().__init__("TinyPic", "settings", parent)
+        super().__init__(
+            "TinyPic",
+            "Settings · Created by Sykron",
+            parent,
+            glitch_title=(config.theme_id == "webcore"),
+            geometry_slot="settings",
+            config=config,
+        )
 
         self._config = config
+        self._on_theme_changed = on_theme_changed
+        self._marquees: list[MarqueeLabel] = []
 
-        self.setStyleSheet(MAIN_STYLE)
+        ui_effects.set_level(config.ui_effects)
+        self.setStyleSheet(build_stylesheet(theme.active))
 
         self.setMinimumWidth(540)
-
-        self.setMaximumWidth(640)
-
-        self.setMinimumHeight(560)
+        self.setMinimumHeight(540)
+        self.setMaximumSize(1200, 900)
 
         self.setModal(False)
 
         self._build()
 
         self._load_values()
+
+        self._cmb_theme.currentIndexChanged.connect(self._on_theme_combo)
+        self._cmb_effects.currentIndexChanged.connect(self._on_effects_combo)
+
+        if config.settings_width <= 0 or config.settings_height <= 0:
+            self.resize(680, 720)
+        self.restore_geometry()
+        if config.settings_x < 0 or config.settings_y < 0:
+            screen = self.screen()
+            if screen:
+                ag = screen.availableGeometry()
+                self.move(
+                    ag.x() + (ag.width() - self.width()) // 2,
+                    ag.y() + (ag.height() - self.height()) // 2,
+                )
 
 
 
@@ -257,214 +281,177 @@ class SettingsWindow(FramelessWindow):
 
 
     def _build(self):
+        outer = self.content_layout()
+        outer.setSpacing(6)
+        outer.setContentsMargins(8, 4, 8, 6)
 
-        root = self.content_layout()
+        self._marquees = []
+        if ui_effects.active().marquee_enabled:
+            top_m = MarqueeLabel(parent=self._content)
+            self._marquees.append(top_m)
+            outer.addWidget(top_m)
 
-        root.setSpacing(14)
+        reading = QWidget()
+        reading.setObjectName("settings_reading_panel")
+        reading_lay = QVBoxLayout(reading)
+        reading_lay.setContentsMargins(0, 0, 0, 0)
+        reading_lay.setSpacing(0)
 
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
 
+        body = QWidget()
+        body.setObjectName("settings_body")
+        root = QVBoxLayout(body)
+        root.setSpacing(12)
+        root.setContentsMargins(6, 6, 6, 6)
 
+        app_box = QGroupBox("Appearance")
+        app_grid = QGridLayout(app_box)
+        app_grid.setColumnStretch(1, 1)
+        app_grid.setSpacing(10)
+        app_grid.setContentsMargins(14, 20, 14, 12)
+        app_grid.addWidget(self._field_label("Theme"), 0, 0)
+        self._cmb_theme = QComboBox()
+        for tok in THEMES.values():
+            self._cmb_theme.addItem(tok.label, tok.id)
+        app_grid.addWidget(self._cmb_theme, 0, 1)
+        app_grid.addWidget(self._field_label("Effects"), 1, 0)
+        self._cmb_effects = QComboBox()
+        for eid, elabel in ui_effects.level_labels():
+            self._cmb_effects.addItem(elabel, eid)
+        app_grid.addWidget(self._cmb_effects, 1, 1)
+        root.addWidget(app_box)
 
+        cap_box = QGroupBox("Capture")
+        cap_lay = QVBoxLayout(cap_box)
+        cap_lay.setContentsMargins(14, 20, 14, 12)
+        cap_lay.setSpacing(10)
 
-        hk_box = QGroupBox("SHORTCUTS")
-
-        hk_grid = QGridLayout(hk_box)
-
+        hk_grid = QGridLayout()
         hk_grid.setColumnStretch(1, 1)
-
-        hk_grid.setSpacing(12)
-
-        hk_grid.setContentsMargins(14, 18, 14, 14)
-
-
-
-        self._hk_full   = self._hk_row(hk_grid, 0, "Full screen")
-
+        hk_grid.setSpacing(10)
+        self._hk_full = self._hk_row(hk_grid, 0, "Full screen")
         self._hk_region = self._hk_row(hk_grid, 1, "Select region")
-
         self._hk_window = self._hk_row(hk_grid, 2, "Active window")
+        cap_lay.addLayout(hk_grid)
 
-
-
-        root.addWidget(hk_box)
-
-
-
-
-
-        out_box = QGroupBox("OUTPUT")
-
-        out_grid = QGridLayout(out_box)
-
-        out_grid.setColumnStretch(1, 1)
-
-        out_grid.setSpacing(12)
-
-        out_grid.setContentsMargins(14, 18, 14, 14)
-
-
-
-        out_grid.addWidget(self._field_label("Save to"), 0, 0)
-
-        path_row = QWidget()
-
-        path_row.setStyleSheet("background: transparent;")
-
-        pr = QHBoxLayout(path_row)
-
-        pr.setContentsMargins(0, 0, 0, 0)
-
-        pr.setSpacing(6)
-
-        self._inp_path = QLineEdit()
-
-        self._inp_path.setPlaceholderText("pick a folder...")
-
-        browse = QPushButton("...")
-
-        browse.setObjectName("btn_round")
-
-        browse.setFixedWidth(38)
-
-        browse.setToolTip("Browse")
-
-        browse.clicked.connect(self._browse)
-
-        pr.addWidget(self._inp_path)
-
-        pr.addWidget(browse)
-
-        out_grid.addWidget(path_row, 0, 1)
-
-
-
-        out_grid.addWidget(self._field_label("Format"), 1, 0)
-
-        self._cmb_fmt = QComboBox()
-
-        self._cmb_fmt.addItems(["PNG", "JPEG", "BMP", "TIFF"])
-
-        self._cmb_fmt.setFixedWidth(130)
-
-        out_grid.addWidget(self._cmb_fmt, 1, 1)
-
-
-
-        out_grid.addWidget(self._field_label("Filename"), 2, 0)
-
-        self._inp_fname = QLineEdit()
-
-        self._inp_fname.setPlaceholderText("screenshot_{datetime}")
-
-        out_grid.addWidget(self._inp_fname, 2, 1)
-
-
-
-        hint = QLabel("tokens:  {datetime}   {date}   {time}")
-
-        hint.setObjectName("lbl_hint")
-
-        out_grid.addWidget(hint, 3, 1)
-
-
-
-        root.addWidget(out_box)
-
-
-
-
-
-        beh_box = QGroupBox("BEHAVIOR")
-
-        beh_lay = QVBoxLayout(beh_box)
-
-        beh_lay.setContentsMargins(14, 18, 14, 14)
-
-        beh_lay.setSpacing(12)
-
-
-
-        self._chk_clip    = QCheckBox("Copy to clipboard after capture")
-
+        self._chk_clip = QCheckBox("Copy to clipboard after capture")
         self._chk_preview = QCheckBox("Show preview window")
-
-        self._chk_cursor  = QCheckBox("Include mouse cursor")
-
-        self._chk_startup = QCheckBox("Start with Windows")
-
-
-
-        for chk in (self._chk_clip, self._chk_preview,
-
-                    self._chk_cursor, self._chk_startup):
-
-            beh_lay.addWidget(chk)
-
-
+        self._chk_cursor = QCheckBox("Include mouse cursor in screenshot")
+        for chk in (self._chk_clip, self._chk_preview, self._chk_cursor):
+            cap_lay.addWidget(chk)
 
         delay_row = QHBoxLayout()
-
-        delay_row.setSpacing(12)
-
+        delay_row.setSpacing(10)
         delay_row.addWidget(self._field_label("Delay"))
-
         self._cmb_delay = QComboBox()
-
         self._cmb_delay.addItems(["None", "1 sec", "2 sec", "3 sec", "5 sec"])
-
         self._cmb_delay.setFixedWidth(110)
-
         delay_row.addWidget(self._cmb_delay)
-
         delay_row.addStretch()
+        cap_lay.addLayout(delay_row)
+        root.addWidget(cap_box)
 
-        beh_lay.addLayout(delay_row)
+        save_box = QGroupBox("Save")
+        out_grid = QGridLayout(save_box)
+        out_grid.setColumnStretch(1, 1)
+        out_grid.setSpacing(10)
+        out_grid.setContentsMargins(14, 20, 14, 12)
 
+        out_grid.addWidget(self._field_label("Folder"), 0, 0)
+        path_row = QWidget()
+        path_row.setStyleSheet("background: transparent;")
+        pr = QHBoxLayout(path_row)
+        pr.setContentsMargins(0, 0, 0, 0)
+        pr.setSpacing(6)
+        self._inp_path = QLineEdit()
+        self._inp_path.setPlaceholderText("pick a folder...")
+        browse = QPushButton("...")
+        browse.setObjectName("btn_round")
+        browse.setFixedWidth(38)
+        browse.setToolTip("Browse")
+        browse.clicked.connect(self._browse)
+        pr.addWidget(self._inp_path)
+        pr.addWidget(browse)
+        out_grid.addWidget(path_row, 0, 1)
 
+        out_grid.addWidget(self._field_label("Format"), 1, 0)
+        self._cmb_fmt = QComboBox()
+        self._cmb_fmt.addItems(["PNG", "JPEG", "BMP", "TIFF"])
+        self._cmb_fmt.setFixedWidth(130)
+        out_grid.addWidget(self._cmb_fmt, 1, 1)
 
-        root.addWidget(beh_box)
+        out_grid.addWidget(self._field_label("Filename"), 2, 0)
+        self._inp_fname = QLineEdit()
+        self._inp_fname.setPlaceholderText("screenshot_{datetime}")
+        self._inp_fname.setToolTip("Tokens: {datetime}  {date}  {time}")
+        out_grid.addWidget(self._inp_fname, 2, 1)
+        root.addWidget(save_box)
+
+        adv_box = QGroupBox("Advanced")
+        adv_lay = QVBoxLayout(adv_box)
+        adv_lay.setContentsMargins(14, 20, 14, 12)
+        self._chk_startup = QCheckBox("Start with Windows")
+        adv_lay.addWidget(self._chk_startup)
+        root.addWidget(adv_box)
 
         root.addStretch()
+        scroll.setWidget(body)
+        reading_lay.addWidget(scroll, 1)
+        outer.addWidget(reading, 1)
 
-
-
-
-
-        btn_row = QHBoxLayout()
-
-        btn_row.setSpacing(10)
-
-        btn_row.addStretch()
-
-
-
+        footer = QWidget()
+        footer.setObjectName("settings_footer")
+        foot_lay = QHBoxLayout(footer)
+        foot_lay.setContentsMargins(12, 10, 12, 10)
+        foot_lay.setSpacing(10)
+        foot_lay.addStretch()
         cancel_btn = QPushButton("Cancel")
-
         cancel_btn.setObjectName("btn_secondary")
-
         cancel_btn.clicked.connect(self.reject)
-
-
-
-        save_btn = QPushButton("Save")
-
+        save_btn = GlowButton("Save")
         save_btn.clicked.connect(self._save)
+        foot_lay.addWidget(cancel_btn)
+        foot_lay.addWidget(save_btn)
+        outer.addWidget(footer)
 
-        soft_shadow(save_btn, "#FF8FD6", blur=18, alpha=95, y=2)
+    def _on_theme_combo(self, _index: int):
+        theme_id = self._cmb_theme.currentData()
+        if not theme_id:
+            return
+        self._config.theme_id = theme_id
+        self._apply_live_theme()
 
+    def _on_effects_combo(self, _index: int):
+        level = self._cmb_effects.currentData()
+        if not level:
+            return
+        self._config.ui_effects = level
+        self._apply_live_theme()
 
+    def _apply_live_theme(self):
+        if self._on_theme_changed:
+            self._on_theme_changed()
+            return
+        app = QApplication.instance()
+        if app:
+            apply_theme(
+                app,
+                self._config.theme_id or "pinkcore",
+                self._config.ui_effects,
+            )
+        self.refresh_theme()
 
-        btn_row.addWidget(cancel_btn)
-
-        btn_row.addWidget(save_btn)
-
-        root.addLayout(btn_row)
-
-
-
-
-
-
+    def refresh_theme(self):
+        super().refresh_theme()
+        for m in self._marquees:
+            m.refresh_theme()
+        for btn in self._content.findChildren(GlowButton):
+            btn.refresh_theme()
 
     @staticmethod
 
@@ -526,6 +513,18 @@ class SettingsWindow(FramelessWindow):
 
         self._cmb_delay.setCurrentIndex(dm.get(c.delay_seconds, 0))
 
+        tid = c.theme_id or "pinkcore"
+        idx = self._cmb_theme.findData(tid)
+        self._cmb_theme.blockSignals(True)
+        self._cmb_theme.setCurrentIndex(max(0, idx))
+        self._cmb_theme.blockSignals(False)
+
+        eid = ui_effects.normalize_level(c.ui_effects)
+        eidx = self._cmb_effects.findData(eid)
+        self._cmb_effects.blockSignals(True)
+        self._cmb_effects.setCurrentIndex(max(0, eidx))
+        self._cmb_effects.blockSignals(False)
+
 
 
     def _browse(self):
@@ -574,7 +573,8 @@ class SettingsWindow(FramelessWindow):
 
         c.delay_seconds = dv[self._cmb_delay.currentIndex()]
 
-
+        c.theme_id = self._cmb_theme.currentData() or "pinkcore"
+        c.ui_effects = self._cmb_effects.currentData() or "calm"
 
         startup_ok = set_startup_enabled(startup_requested)
 

@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal, QPointF
 
-from PyQt6.QtGui import QIcon, QPixmap, QColor, QPainter, QPolygonF
+from PyQt6.QtGui import QIcon
 
 
 
@@ -33,7 +33,10 @@ from preview_window import PreviewWindow
 
 from settings_window import SettingsWindow
 
-from styles import MAIN_STYLE
+from styles import build_stylesheet
+import theme
+from theme_apply import apply_theme
+from theme_icons import make_tray_icon
 
 
 def _log_error(title: str, exc: BaseException):
@@ -49,146 +52,25 @@ def _log_error(title: str, exc: BaseException):
         pass
 
 
+def _dbg(msg: str):
+    try:
+        import os
+        path = Path(os.environ.get("APPDATA", Path.home())) / "TinyPic" / "startup.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            import datetime
+            f.write(f"[{datetime.datetime.now().strftime('%H:%M:%S.%f')}] {msg}\n")
+    except Exception:
+        pass
 
 
-
-def _make_icon(size: int = 64) -> QIcon:
-
-
-
-    px = QPixmap(size, size)
-
-    px.fill(Qt.GlobalColor.transparent)
-
-
-
-    p = QPainter(px)
-
-    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-
-
-
-    def pts(points):
-
-        return QPolygonF([QPointF(x * size / 64, y * size / 64) for x, y in points])
-
-
-
-    p.setPen(Qt.PenStyle.NoPen)
-
-
-
-
-
-    p.setBrush(QColor("#001018"))
-
-    p.drawPolygon(pts([(7, 25), (16, 18), (24, 18), (29, 12),
-
-                       (42, 12), (48, 18), (56, 18), (60, 25),
-
-                       (58, 49), (48, 56), (16, 56), (6, 49)]))
-
-
-
-
-
-    p.setBrush(QColor("#FF8FD6"))
-
-    p.drawPolygon(pts([(9, 27), (17, 20), (25, 20), (30, 14),
-
-                       (41, 14), (47, 20), (54, 20), (57, 27),
-
-                       (55, 47), (47, 53), (17, 53), (9, 47)]))
-
-
-
-
-
-    p.setBrush(QColor("#FFE6F7"))
-
-    p.drawPolygon(pts([(12, 28), (18, 22), (52, 22), (55, 29),
-
-                       (52, 47), (45, 51), (18, 51), (12, 46)]))
-
-    p.setBrush(QColor("#FFF4FC"))
-
-    p.drawPolygon(pts([(12, 28), (18, 22), (31, 22), (27, 35), (12, 46)]))
-
-    p.setBrush(QColor("#F4B8FF"))
-
-    p.drawPolygon(pts([(31, 22), (52, 22), (55, 29), (43, 36), (27, 35)]))
-
-    p.setBrush(QColor("#B980C7"))
-
-    p.drawPolygon(pts([(12, 46), (27, 35), (32, 51), (18, 51)]))
-
-    p.setBrush(QColor("#D89BE5"))
-
-    p.drawPolygon(pts([(43, 36), (55, 29), (52, 47), (45, 51), (32, 51)]))
-
-
-
-
-
-    p.setBrush(QColor("#FFD6F1"))
-
-    p.drawPolygon(pts([(25, 20), (30, 14), (41, 14), (47, 20)]))
-
-    p.setBrush(QColor("#E0AAFF"))
-
-    p.drawPolygon(pts([(30, 14), (41, 14), (37, 20), (25, 20)]))
-
-
-
-
-
-    p.setBrush(QColor("#B5179E"))
-
-    p.drawPolygon(pts([(45, 26), (52, 26), (52, 32), (45, 31)]))
-
-    p.setBrush(QColor("#FFFFFF"))
-
-    p.drawPolygon(pts([(47, 27), (50, 27), (50, 30), (47, 30)]))
-
-
-
-
-
-    p.setBrush(QColor("#001018"))
-
-    p.drawEllipse(int(22 * size / 64), int(27 * size / 64),
-
-                  int(21 * size / 64), int(21 * size / 64))
-
-    p.setBrush(QColor("#06105A"))
-
-    p.drawEllipse(int(25 * size / 64), int(30 * size / 64),
-
-                  int(15 * size / 64), int(15 * size / 64))
-
-    p.setBrush(QColor("#B5179E"))
-
-    p.drawPolygon(pts([(28, 31), (38, 34), (35, 42), (27, 40)]))
-
-    p.setBrush(QColor("#FF8FD6"))
-
-    p.drawPolygon(pts([(31, 33), (37, 35), (34, 39), (30, 38)]))
-
-    p.setBrush(QColor("#FFFFFF"))
-
-    p.drawPolygon(pts([(33, 32), (37, 34), (34, 35)]))
-
-
-
-    p.end()
-
-    return QIcon(px)
 
 
 
 class _Sig(QObject):
 
     capture_done = pyqtSignal(object)
+    theme_changed = pyqtSignal()
 
 
 
@@ -228,11 +110,21 @@ class TinyPicApp:
 
 
 
-        self._setup_tray()
+        _dbg("__init__: before _setup_tray")
+        try:
+            self._setup_tray()
+            _dbg("__init__: _setup_tray OK")
+        except Exception as e:
+            _log_error("setup_tray", e)
+            _dbg(f"__init__: _setup_tray FAILED: {e}")
 
+        _dbg("__init__: before _setup_region_overlay")
         self._setup_region_overlay()
-
+        _dbg("__init__: before _register_hotkeys")
         self._register_hotkeys()
+
+        QTimer.singleShot(300, self._open_settings)
+        _dbg("__init__: done")
 
 
 
@@ -241,16 +133,22 @@ class TinyPicApp:
 
 
     def _setup_tray(self):
+        _dbg(f"_setup_tray: isSystemTrayAvailable={QSystemTrayIcon.isSystemTrayAvailable()}")
+        icon = make_tray_icon(theme.active)
+        _dbg(f"_setup_tray: icon.isNull={icon.isNull()}")
+        if icon.isNull():
+            from PyQt6.QtWidgets import QStyle
+            icon = self._qt_app.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
+            _dbg("_setup_tray: using fallback system icon")
 
-        self._tray = QSystemTrayIcon(_make_icon())
-
+        self._tray = QSystemTrayIcon(icon)
         self._tray.setToolTip("TinyPic | click to capture region")
 
 
 
-        menu = QMenu()
+        self._tray_menu = QMenu()
 
-        menu.setStyleSheet(MAIN_STYLE)
+        self._tray_menu.setStyleSheet(build_stylesheet(theme.active))
 
 
 
@@ -264,27 +162,28 @@ class TinyPicApp:
 
         ]:
 
-            a = menu.addAction(label)
+            a = self._tray_menu.addAction(label)
 
             a.triggered.connect(lambda _, m=mode: self._trigger(m))
 
 
 
-        menu.addSeparator()
+        self._tray_menu.addSeparator()
 
-        menu.addAction("[*] Settings...").triggered.connect(self._open_settings)
+        self._tray_menu.addAction("[*] Settings...").triggered.connect(self._open_settings)
 
-        menu.addSeparator()
+        self._tray_menu.addSeparator()
 
-        menu.addAction("[x] Quit").triggered.connect(self._quit)
+        self._tray_menu.addAction("[x] Quit").triggered.connect(self._quit)
 
 
 
-        self._tray.setContextMenu(menu)
+        self._tray.setContextMenu(self._tray_menu)
 
         self._tray.activated.connect(self._on_tray_activated)
 
         self._tray.show()
+        _dbg(f"_setup_tray: tray.show() called, isVisible={self._tray.isVisible()}")
 
 
 
@@ -401,16 +300,15 @@ class TinyPicApp:
 
 
 
-    def _on_region(self, x: int, y: int, w: int, h: int):
+    def _on_region(self, image):
         self._region_pending = False
 
         delay = self._config.delay_seconds
 
-        def _do_capture():
+        def _do_show():
             try:
-                img = capture_region(x, y, w, h)
-                if img:
-                    self._show_preview(img)
+                if image:
+                    self._show_preview(image)
             except Exception as e:
                 _log_error("region capture", e)
                 self._tray.showMessage(
@@ -418,7 +316,7 @@ class TinyPicApp:
                     QSystemTrayIcon.MessageIcon.Critical, 3000
                 )
 
-        QTimer.singleShot(max(1, int(delay * 1000)), _do_capture)
+        QTimer.singleShot(max(0, int(delay * 1000)), _do_show)
 
     def _on_region_cancelled(self):
         self._region_pending = False
@@ -511,13 +409,34 @@ class TinyPicApp:
 
 
 
+    def refresh_theme(self):
+        apply_theme(
+            self._qt_app,
+            self._config.theme_id or "pinkcore",
+            self._config.ui_effects,
+        )
+        self._tray.setIcon(make_tray_icon(theme.active))
+        self._tray_menu.setStyleSheet(build_stylesheet(theme.active))
+        if self._settings and self._settings.isVisible():
+            self._settings.refresh_theme()
+        if self._preview and self._preview.isVisible():
+            self._preview.refresh_theme()
+        if self._region_overlay:
+            self._region_overlay.refresh_theme()
+        self._sig.theme_changed.emit()
+
     def _open_settings(self):
+        if self._settings:
+            self._settings.close()
+            self._settings.deleteLater()
+            self._settings = None
 
-        if not self._settings:
-            self._settings = SettingsWindow(self._config)
-
-            self._settings.settings_saved.connect(self._on_settings_saved)
-            self._settings.destroyed.connect(lambda: setattr(self, "_settings", None))
+        self._settings = SettingsWindow(
+            self._config,
+            on_theme_changed=self.refresh_theme,
+        )
+        self._settings.settings_saved.connect(self._on_settings_saved)
+        self._settings.destroyed.connect(lambda: setattr(self, "_settings", None))
         self._settings.show()
         self._settings.raise_()
         self._settings.activateWindow()
@@ -527,6 +446,8 @@ class TinyPicApp:
     def _on_settings_saved(self, cfg: Config):
 
         self._config = cfg
+
+        self.refresh_theme()
 
         self._register_hotkeys()
 

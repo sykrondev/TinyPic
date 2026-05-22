@@ -212,13 +212,34 @@ class Config:
 
     hotkey_window: str = "shift+print screen"
 
+    theme_id: str = "pinkcore"
 
+    ui_effects: str = "calm"
 
     window_x: int = -1
 
     window_y: int = -1
 
+    settings_width: int = 0
 
+    settings_height: int = 0
+
+    settings_x: int = -1
+
+    settings_y: int = -1
+
+    preview_width: int = 0
+
+    preview_height: int = 0
+
+    preview_x: int = -1
+
+    preview_y: int = -1
+
+    def __post_init__(self):
+        if self.settings_x < 0 and self.window_x >= 0:
+            self.settings_x = self.window_x
+            self.settings_y = self.window_y
 
     def save(self):
 
