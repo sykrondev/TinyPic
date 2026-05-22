@@ -216,6 +216,8 @@ class Config:
 
     ui_effects: str = "calm"
 
+    language: str = "en"
+
     window_x: int = -1
 
     window_y: int = -1

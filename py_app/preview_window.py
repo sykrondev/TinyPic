@@ -16,6 +16,7 @@ import ui_effects
 from config import Config
 from frameless import FramelessWindow
 from widgets.glow_button import GlowButton
+from i18n import t
 
 
 def _pil_to_qpixmap(img: Image.Image) -> QPixmap:
@@ -63,7 +64,7 @@ class PreviewWindow(FramelessWindow):
     def __init__(self, image: Image.Image, config: Config, parent=None):
         w, h = image.size
         super().__init__(
-            "Preview",
+            t("preview.title"),
             f"{w} × {h}  ·  {config.image_format}",
             parent,
             glitch_title=(config.theme_id == "webcore"),
@@ -111,17 +112,17 @@ class PreviewWindow(FramelessWindow):
         bar.setSpacing(6)
         bar.setContentsMargins(0, 4, 0, 0)
 
-        self._btn_copy = GlowButton("Copy")
+        self._btn_copy = GlowButton(t("preview.copy"))
         self._btn_copy.setObjectName("btn_sky")
-        self._btn_copy.setToolTip("Copy to clipboard | Ctrl+C")
+        self._btn_copy.setToolTip(t("preview.copy_tip"))
         self._btn_copy.clicked.connect(self._copy)
-        self._btn_save = GlowButton("Save")
-        self._btn_save.setToolTip("Save to default folder | Ctrl+S")
+        self._btn_save = GlowButton(t("preview.save"))
+        self._btn_save.setToolTip(t("preview.save_tip"))
         self._btn_save.clicked.connect(self._save_default)
-        self._btn_save_as = QPushButton("Save as...")
+        self._btn_save_as = QPushButton(t("preview.save_as"))
         self._btn_save_as.setObjectName("btn_secondary")
         self._btn_save_as.clicked.connect(self._save_as)
-        self._btn_discard = QPushButton("Discard")
+        self._btn_discard = QPushButton(t("preview.discard"))
         self._btn_discard.setObjectName("btn_discard")
         self._btn_discard.clicked.connect(self.reject)
 
@@ -194,16 +195,26 @@ class PreviewWindow(FramelessWindow):
             "font-size:11px; background:transparent;"
         )
 
-    def refresh_theme(self):
-        t = theme.active
+    def retranslate(self):
         w, h = self._image.size
-        self.set_title("Preview", f"{w} × {h}  ·  {self._config.image_format}")
-        self.setStyleSheet(build_stylesheet(t))
+        self.set_title(t("preview.title"), f"{w} × {h}  ·  {self._config.image_format}")
+        self._btn_copy.setText(t("preview.copy"))
+        self._btn_copy.setToolTip(t("preview.copy_tip"))
+        self._btn_save.setText(t("preview.save"))
+        self._btn_save.setToolTip(t("preview.save_tip"))
+        self._btn_save_as.setText(t("preview.save_as"))
+        self._btn_discard.setText(t("preview.discard"))
+
+    def refresh_theme(self):
+        tk = theme.active
+        w, h = self._image.size
+        self.set_title(t("preview.title"), f"{w} × {h}  ·  {self._config.image_format}")
+        self.setStyleSheet(build_stylesheet(tk))
         self._title_bar.refresh_theme()
         self._surface.refresh_theme()
         for child in self._content.findChildren(GlowButton):
             child.refresh_theme()
-        self._lbl_status.setStyleSheet(self._status_style(t.cyan_hud))
+        self._lbl_status.setStyleSheet(self._status_style(tk.cyan_hud))
         self._refresh_display()
         for child in self._content.findChildren(QWidget):
             child.style().unpolish(child)
@@ -219,7 +230,7 @@ class PreviewWindow(FramelessWindow):
         try:
             from capture import image_to_clipboard
             image_to_clipboard(self._image)
-            self._set_status("copied!")
+            self._set_status(t("preview.copied"))
         except Exception as e:
             self._set_status(f"✗ {e}", theme.active.glitch_magenta)
 
@@ -227,7 +238,7 @@ class PreviewWindow(FramelessWindow):
         try:
             from capture import image_to_clipboard
             image_to_clipboard(self._image)
-            self._set_status("auto-copied")
+            self._set_status(t("preview.auto_copied"))
         except Exception:
             pass
 
@@ -250,7 +261,7 @@ class PreviewWindow(FramelessWindow):
                 n += 1
             from capture import save_image
             save_image(self._image, str(base), self._config.image_format)
-            self._set_status(f"saved {base.name}")
+            self._set_status(t("preview.saved", name=base.name))
         except Exception as e:
             self._set_status(f"✗ {e}", theme.active.glitch_magenta)
 
@@ -264,7 +275,7 @@ class PreviewWindow(FramelessWindow):
         }
         filt = ";;".join(filters.values())
         path, _ = QFileDialog.getSaveFileName(
-            self, "Save screenshot",
+            self, t("preview.save_dialog"),
             str(Path(self._config.save_path) / self._build_filename()),
             filt, filters.get(fmt, filters["PNG"]),
         )
@@ -274,6 +285,6 @@ class PreviewWindow(FramelessWindow):
                 ext = "JPEG" if ext in ("JPG", "JPEG") else (ext if ext in ("PNG", "BMP", "TIFF") else fmt)
                 from capture import save_image
                 save_image(self._image, path, ext)
-                self._set_status(f"saved {Path(path).name}")
+                self._set_status(t("preview.saved", name=Path(path).name))
             except Exception as e:
                 self._set_status(f"✗ {e}", theme.active.glitch_magenta)

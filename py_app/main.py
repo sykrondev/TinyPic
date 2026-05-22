@@ -80,6 +80,8 @@ def main():
 
     load_fonts()
     config = Config.load()
+    import i18n
+    i18n.set_language(config.language or "en")
     apply_theme(app, config.theme_id or "pinkcore", config.ui_effects)
     _mlog("theme applied")
 

@@ -37,6 +37,8 @@ from styles import build_stylesheet
 import theme
 from theme_apply import apply_theme
 from theme_icons import make_tray_icon
+from i18n import t
+import i18n
 
 
 def _log_error(title: str, exc: BaseException):
@@ -123,7 +125,7 @@ class TinyPicApp:
         _dbg("__init__: before _register_hotkeys")
         self._register_hotkeys()
 
-        QTimer.singleShot(300, self._open_settings)
+        i18n.on_change(self.retranslate)
         _dbg("__init__: done")
 
 
@@ -142,7 +144,7 @@ class TinyPicApp:
             _dbg("_setup_tray: using fallback system icon")
 
         self._tray = QSystemTrayIcon(icon)
-        self._tray.setToolTip("TinyPic | click to capture region")
+        self._tray.setToolTip(t("tray.tooltip"))
 
 
 
@@ -154,11 +156,11 @@ class TinyPicApp:
 
         for label, mode in [
 
-            ("[+] Select region",  "region"),
+            (t("tray.select_region"),  "region"),
 
-            ("[ ] Full screen",    "fullscreen"),
+            (t("tray.full_screen"),    "fullscreen"),
 
-            ("[/] Active window",  "window"),
+            (t("tray.active_window"),  "window"),
 
         ]:
 
@@ -170,11 +172,11 @@ class TinyPicApp:
 
         self._tray_menu.addSeparator()
 
-        self._tray_menu.addAction("[*] Settings...").triggered.connect(self._open_settings)
+        self._tray_menu.addAction(t("tray.settings")).triggered.connect(self._open_settings)
 
         self._tray_menu.addSeparator()
 
-        self._tray_menu.addAction("[x] Quit").triggered.connect(self._quit)
+        self._tray_menu.addAction(t("tray.quit")).triggered.connect(self._quit)
 
 
 
@@ -184,6 +186,14 @@ class TinyPicApp:
 
         self._tray.show()
         _dbg(f"_setup_tray: tray.show() called, isVisible={self._tray.isVisible()}")
+
+        if self._tray.supportsMessages():
+            self._tray.showMessage(
+                t("notify.running.title"),
+                t("notify.running.body"),
+                QSystemTrayIcon.MessageIcon.Information,
+                2000,
+            )
 
 
 
@@ -312,7 +322,7 @@ class TinyPicApp:
             except Exception as e:
                 _log_error("region capture", e)
                 self._tray.showMessage(
-                    "TinyPic", f"capture error: {e}",
+                    "TinyPic", t("notify.capture_error", err=e),
                     QSystemTrayIcon.MessageIcon.Critical, 3000
                 )
 
@@ -329,7 +339,7 @@ class TinyPicApp:
         except Exception as e:
             _log_error("show preview", e)
             self._tray.showMessage(
-                "TinyPic", f"preview error: {e}",
+                "TinyPic", t("notify.preview_error", err=e),
                 QSystemTrayIcon.MessageIcon.Critical, 3000
             )
 
@@ -381,13 +391,13 @@ class TinyPicApp:
 
             save_image(image, path, self._config.image_format)
 
-            self._tray.showMessage("TinyPic", f"saved {Path(path).name}",
+            self._tray.showMessage("TinyPic", t("notify.saved", name=Path(path).name),
 
                                    QSystemTrayIcon.MessageIcon.NoIcon, 2000)
 
         except Exception as e:
 
-            self._tray.showMessage("TinyPic", f"error: {e}",
+            self._tray.showMessage("TinyPic", t("notify.error", err=e),
 
                                    QSystemTrayIcon.MessageIcon.Critical, 3000)
 
@@ -409,6 +419,19 @@ class TinyPicApp:
 
 
 
+    def retranslate(self):
+        self._tray.setToolTip(t("tray.tooltip"))
+        actions = self._tray_menu.actions()
+        keys = ["tray.select_region", "tray.full_screen", "tray.active_window", None,
+                "tray.settings", None, "tray.quit"]
+        for act, key in zip(actions, keys):
+            if key:
+                act.setText(t(key))
+        if self._settings and self._settings.isVisible():
+            self._settings.retranslate()
+        if self._preview and self._preview.isVisible():
+            self._preview.retranslate()
+
     def refresh_theme(self):
         apply_theme(
             self._qt_app,
@@ -426,16 +449,22 @@ class TinyPicApp:
         self._sig.theme_changed.emit()
 
     def _open_settings(self):
-        if self._settings:
-            self._settings.close()
-            self._settings.deleteLater()
-            self._settings = None
+        if self._settings is not None:
+            try:
+                if not self._settings.isVisible():
+                    self._settings.show()
+                self._settings.raise_()
+                self._settings.activateWindow()
+                return
+            except RuntimeError:
+                self._settings = None
 
         self._settings = SettingsWindow(
             self._config,
             on_theme_changed=self.refresh_theme,
         )
         self._settings.settings_saved.connect(self._on_settings_saved)
+        self._settings.finished.connect(lambda _: setattr(self, "_settings", None))
         self._settings.destroyed.connect(lambda: setattr(self, "_settings", None))
         self._settings.show()
         self._settings.raise_()

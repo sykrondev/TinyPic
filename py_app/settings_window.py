@@ -21,6 +21,8 @@ import ui_effects
 from frameless import FramelessWindow
 from widgets.marquee_label import MarqueeLabel
 from widgets.glow_button import GlowButton
+import i18n
+from i18n import t, LANGUAGES
 
 
 
@@ -80,7 +82,7 @@ class HotkeyButton(QPushButton):
 
         self._refresh_style()
 
-        self.setText("press a combo...   esc to cancel")
+        self.setText(t("settings.hotkey_recording"))
 
         self.setFocus()
 
@@ -136,7 +138,7 @@ class HotkeyButton(QPushButton):
 
     def _update_text(self):
 
-        self.setText(self._hotkey if self._hotkey else "(unset)")
+        self.setText(self._hotkey if self._hotkey else t("settings.hotkey_unset"))
 
 
 
@@ -234,8 +236,8 @@ class SettingsWindow(FramelessWindow):
     ):
 
         super().__init__(
-            "TinyPic",
-            "Settings · Created by Sykron",
+            t("settings.title"),
+            t("settings.subtitle"),
             parent,
             glitch_title=(config.theme_id == "webcore"),
             geometry_slot="settings",
@@ -261,6 +263,7 @@ class SettingsWindow(FramelessWindow):
 
         self._cmb_theme.currentIndexChanged.connect(self._on_theme_combo)
         self._cmb_effects.currentIndexChanged.connect(self._on_effects_combo)
+        self._cmb_language.currentIndexChanged.connect(self._on_language_combo)
 
         if config.settings_width <= 0 or config.settings_height <= 0:
             self.resize(680, 720)
@@ -309,95 +312,109 @@ class SettingsWindow(FramelessWindow):
         root.setSpacing(12)
         root.setContentsMargins(6, 6, 6, 6)
 
-        app_box = QGroupBox("Appearance")
-        app_grid = QGridLayout(app_box)
+        self._app_box = QGroupBox(t("settings.appearance"))
+        app_grid = QGridLayout(self._app_box)
         app_grid.setColumnStretch(1, 1)
         app_grid.setSpacing(10)
         app_grid.setContentsMargins(14, 20, 14, 12)
-        app_grid.addWidget(self._field_label("Theme"), 0, 0)
+        self._lbl_theme = self._field_label(t("settings.theme"))
+        app_grid.addWidget(self._lbl_theme, 0, 0)
         self._cmb_theme = QComboBox()
         for tok in THEMES.values():
             self._cmb_theme.addItem(tok.label, tok.id)
         app_grid.addWidget(self._cmb_theme, 0, 1)
-        app_grid.addWidget(self._field_label("Effects"), 1, 0)
+        self._lbl_effects = self._field_label(t("settings.effects"))
+        app_grid.addWidget(self._lbl_effects, 1, 0)
         self._cmb_effects = QComboBox()
         for eid, elabel in ui_effects.level_labels():
             self._cmb_effects.addItem(elabel, eid)
         app_grid.addWidget(self._cmb_effects, 1, 1)
-        root.addWidget(app_box)
+        self._lbl_language = self._field_label(t("settings.language"))
+        app_grid.addWidget(self._lbl_language, 2, 0)
+        self._cmb_language = QComboBox()
+        for lid, llabel in LANGUAGES.items():
+            self._cmb_language.addItem(llabel, lid)
+        app_grid.addWidget(self._cmb_language, 2, 1)
+        root.addWidget(self._app_box)
 
-        cap_box = QGroupBox("Capture")
-        cap_lay = QVBoxLayout(cap_box)
+        self._cap_box = QGroupBox(t("settings.capture"))
+        cap_lay = QVBoxLayout(self._cap_box)
         cap_lay.setContentsMargins(14, 20, 14, 12)
         cap_lay.setSpacing(10)
 
         hk_grid = QGridLayout()
         hk_grid.setColumnStretch(1, 1)
         hk_grid.setSpacing(10)
-        self._hk_full = self._hk_row(hk_grid, 0, "Full screen")
-        self._hk_region = self._hk_row(hk_grid, 1, "Select region")
-        self._hk_window = self._hk_row(hk_grid, 2, "Active window")
+        self._hk_full, self._lbl_hk_full = self._hk_row(hk_grid, 0, "settings.hk_full")
+        self._hk_region, self._lbl_hk_region = self._hk_row(hk_grid, 1, "settings.hk_region")
+        self._hk_window, self._lbl_hk_window = self._hk_row(hk_grid, 2, "settings.hk_window")
         cap_lay.addLayout(hk_grid)
 
-        self._chk_clip = QCheckBox("Copy to clipboard after capture")
-        self._chk_preview = QCheckBox("Show preview window")
-        self._chk_cursor = QCheckBox("Include mouse cursor in screenshot")
+        self._chk_clip = QCheckBox(t("settings.copy_clip"))
+        self._chk_preview = QCheckBox(t("settings.show_preview"))
+        self._chk_cursor = QCheckBox(t("settings.include_cursor"))
         for chk in (self._chk_clip, self._chk_preview, self._chk_cursor):
             cap_lay.addWidget(chk)
 
         delay_row = QHBoxLayout()
         delay_row.setSpacing(10)
-        delay_row.addWidget(self._field_label("Delay"))
+        self._lbl_delay = self._field_label(t("settings.delay"))
+        delay_row.addWidget(self._lbl_delay)
         self._cmb_delay = QComboBox()
-        self._cmb_delay.addItems(["None", "1 sec", "2 sec", "3 sec", "5 sec"])
+        self._cmb_delay.addItems([t("settings.delay_none"), t("settings.delay_1"),
+                                  t("settings.delay_2"), t("settings.delay_3"),
+                                  t("settings.delay_5")])
         self._cmb_delay.setFixedWidth(110)
         delay_row.addWidget(self._cmb_delay)
         delay_row.addStretch()
         cap_lay.addLayout(delay_row)
-        root.addWidget(cap_box)
+        root.addWidget(self._cap_box)
 
-        save_box = QGroupBox("Save")
-        out_grid = QGridLayout(save_box)
+        self._save_box = QGroupBox(t("settings.save"))
+        out_grid = QGridLayout(self._save_box)
         out_grid.setColumnStretch(1, 1)
         out_grid.setSpacing(10)
         out_grid.setContentsMargins(14, 20, 14, 12)
 
-        out_grid.addWidget(self._field_label("Folder"), 0, 0)
+        self._lbl_folder = self._field_label(t("settings.folder"))
+        out_grid.addWidget(self._lbl_folder, 0, 0)
         path_row = QWidget()
         path_row.setStyleSheet("background: transparent;")
         pr = QHBoxLayout(path_row)
         pr.setContentsMargins(0, 0, 0, 0)
         pr.setSpacing(6)
         self._inp_path = QLineEdit()
-        self._inp_path.setPlaceholderText("pick a folder...")
-        browse = QPushButton("...")
-        browse.setObjectName("btn_round")
-        browse.setFixedWidth(38)
-        browse.setToolTip("Browse")
-        browse.clicked.connect(self._browse)
+        self._inp_path.setPlaceholderText(t("settings.folder_placeholder"))
+        self._btn_browse = QPushButton("...")
+        self._btn_browse.setObjectName("btn_round")
+        self._btn_browse.setFixedWidth(38)
+        self._btn_browse.setToolTip(t("settings.browse_tip"))
+        self._btn_browse.clicked.connect(self._browse)
         pr.addWidget(self._inp_path)
-        pr.addWidget(browse)
+        pr.addWidget(self._btn_browse)
         out_grid.addWidget(path_row, 0, 1)
 
-        out_grid.addWidget(self._field_label("Format"), 1, 0)
+        self._lbl_format = self._field_label(t("settings.format"))
+        out_grid.addWidget(self._lbl_format, 1, 0)
         self._cmb_fmt = QComboBox()
         self._cmb_fmt.addItems(["PNG", "JPEG", "BMP", "TIFF"])
         self._cmb_fmt.setFixedWidth(130)
         out_grid.addWidget(self._cmb_fmt, 1, 1)
 
-        out_grid.addWidget(self._field_label("Filename"), 2, 0)
+        self._lbl_filename = self._field_label(t("settings.filename"))
+        out_grid.addWidget(self._lbl_filename, 2, 0)
         self._inp_fname = QLineEdit()
         self._inp_fname.setPlaceholderText("screenshot_{datetime}")
-        self._inp_fname.setToolTip("Tokens: {datetime}  {date}  {time}")
+        self._inp_fname.setToolTip(t("settings.filename_tip"))
         out_grid.addWidget(self._inp_fname, 2, 1)
-        root.addWidget(save_box)
+        root.addWidget(self._save_box)
 
-        adv_box = QGroupBox("Advanced")
-        adv_lay = QVBoxLayout(adv_box)
+        self._adv_box = QGroupBox(t("settings.advanced"))
+        adv_lay = QVBoxLayout(self._adv_box)
         adv_lay.setContentsMargins(14, 20, 14, 12)
-        self._chk_startup = QCheckBox("Start with Windows")
+        self._chk_startup = QCheckBox(t("settings.start_with_windows"))
         adv_lay.addWidget(self._chk_startup)
-        root.addWidget(adv_box)
+        root.addWidget(self._adv_box)
 
         root.addStretch()
         scroll.setWidget(body)
@@ -410,14 +427,51 @@ class SettingsWindow(FramelessWindow):
         foot_lay.setContentsMargins(12, 10, 12, 10)
         foot_lay.setSpacing(10)
         foot_lay.addStretch()
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.setObjectName("btn_secondary")
-        cancel_btn.clicked.connect(self.reject)
-        save_btn = GlowButton("Save")
-        save_btn.clicked.connect(self._save)
-        foot_lay.addWidget(cancel_btn)
-        foot_lay.addWidget(save_btn)
+        self._btn_cancel = QPushButton(t("settings.cancel"))
+        self._btn_cancel.setObjectName("btn_secondary")
+        self._btn_cancel.clicked.connect(self.reject)
+        self._btn_save = GlowButton(t("settings.save_btn"))
+        self._btn_save.clicked.connect(self._save)
+        foot_lay.addWidget(self._btn_cancel)
+        foot_lay.addWidget(self._btn_save)
         outer.addWidget(footer)
+
+    def retranslate(self):
+        self.set_title(t("settings.title"), t("settings.subtitle"))
+        self._app_box.setTitle(t("settings.appearance"))
+        self._lbl_theme.setText(t("settings.theme"))
+        self._lbl_effects.setText(t("settings.effects"))
+        self._lbl_language.setText(t("settings.language"))
+        self._cap_box.setTitle(t("settings.capture"))
+        self._lbl_hk_full.setText(t("settings.hk_full"))
+        self._lbl_hk_region.setText(t("settings.hk_region"))
+        self._lbl_hk_window.setText(t("settings.hk_window"))
+        self._hk_full._update_text()
+        self._hk_region._update_text()
+        self._hk_window._update_text()
+        self._chk_clip.setText(t("settings.copy_clip"))
+        self._chk_preview.setText(t("settings.show_preview"))
+        self._chk_cursor.setText(t("settings.include_cursor"))
+        self._lbl_delay.setText(t("settings.delay"))
+        cur = self._cmb_delay.currentIndex()
+        self._cmb_delay.blockSignals(True)
+        self._cmb_delay.clear()
+        self._cmb_delay.addItems([t("settings.delay_none"), t("settings.delay_1"),
+                                  t("settings.delay_2"), t("settings.delay_3"),
+                                  t("settings.delay_5")])
+        self._cmb_delay.setCurrentIndex(max(0, cur))
+        self._cmb_delay.blockSignals(False)
+        self._save_box.setTitle(t("settings.save"))
+        self._lbl_folder.setText(t("settings.folder"))
+        self._inp_path.setPlaceholderText(t("settings.folder_placeholder"))
+        self._btn_browse.setToolTip(t("settings.browse_tip"))
+        self._lbl_format.setText(t("settings.format"))
+        self._lbl_filename.setText(t("settings.filename"))
+        self._inp_fname.setToolTip(t("settings.filename_tip"))
+        self._adv_box.setTitle(t("settings.advanced"))
+        self._chk_startup.setText(t("settings.start_with_windows"))
+        self._btn_cancel.setText(t("settings.cancel"))
+        self._btn_save.setText(t("settings.save_btn"))
 
     def _on_theme_combo(self, _index: int):
         theme_id = self._cmb_theme.currentData()
@@ -432,6 +486,16 @@ class SettingsWindow(FramelessWindow):
             return
         self._config.ui_effects = level
         self._apply_live_theme()
+
+    def _on_language_combo(self, _index: int):
+        lang = self._cmb_language.currentData()
+        if not lang:
+            return
+        self._config.language = lang
+        i18n.set_language(lang)
+        self.retranslate()
+        if self._on_theme_changed:
+            self._on_theme_changed()
 
     def _apply_live_theme(self):
         if self._on_theme_changed:
@@ -465,15 +529,17 @@ class SettingsWindow(FramelessWindow):
 
 
 
-    def _hk_row(self, layout: QGridLayout, row: int, label: str) -> HotkeyButton:
+    def _hk_row(self, layout: QGridLayout, row: int, label_key: str):
 
-        layout.addWidget(self._field_label(label), row, 0)
+        lbl = self._field_label(t(label_key))
+
+        layout.addWidget(lbl, row, 0)
 
         btn = HotkeyButton()
 
         layout.addWidget(btn, row, 1)
 
-        return btn
+        return btn, lbl
 
 
 
@@ -525,13 +591,19 @@ class SettingsWindow(FramelessWindow):
         self._cmb_effects.setCurrentIndex(max(0, eidx))
         self._cmb_effects.blockSignals(False)
 
+        lid = c.language or "en"
+        lidx = self._cmb_language.findData(lid)
+        self._cmb_language.blockSignals(True)
+        self._cmb_language.setCurrentIndex(max(0, lidx))
+        self._cmb_language.blockSignals(False)
+
 
 
     def _browse(self):
 
         cur = self._inp_path.text() or str(Path.home())
 
-        d = QFileDialog.getExistingDirectory(self, "Select save folder", cur)
+        d = QFileDialog.getExistingDirectory(self, t("settings.select_folder"), cur)
 
         if d:
 
@@ -575,6 +647,7 @@ class SettingsWindow(FramelessWindow):
 
         c.theme_id = self._cmb_theme.currentData() or "pinkcore"
         c.ui_effects = self._cmb_effects.currentData() or "calm"
+        c.language = self._cmb_language.currentData() or "en"
 
         startup_ok = set_startup_enabled(startup_requested)
 
